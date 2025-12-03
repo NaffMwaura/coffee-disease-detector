@@ -8,3 +8,23 @@
 // Inside each folder create a .gitignore file manually that will prevent pushing some files to github eg node modules
 
 // Install some extensions zenye zitakusaidia: Python (Microsoft), Pylance, Black formatter, isort, REST client
+
+// Have the train model.py copied so that we tain the dataset for prediction
+
+//Open the frontend in integrated terminal and type this command
+            // pnpm create vite@latest my-ts-app -- --template react-ts
+        //This creates a React Application with Typescript ready to work on it for the frontend
+
+// The next step will be copying the dataset into our project so that trainModel can read it. Below is our structure
+        /CoffeescanAI/
+└── coffeescan-ai/
+    ├── Frontend/
+    ├── Backend/
+    │   └── train_model.py
+    └── Cofee disease dataset/  <-- Dataset goes here
+        └── train/
+            ├── Cerscospora/
+            └── coffee___healthy/
+            └── ... All the other classes
+
+//
