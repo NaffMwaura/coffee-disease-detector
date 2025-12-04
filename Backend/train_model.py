@@ -7,16 +7,20 @@ from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 import os
 import numpy as np
 from sklearn.utils import class_weight
+import math # Import the math library for ceil calculation
 
 # --- Configuration ---
 BATCH_SIZE = 32
 IMG_HEIGHT = 224
 IMG_WIDTH = 224
-EPOCHS = 30 
-MODEL_PATH = "./coffeescan1_model_final.h5" 
-# FIX: Adjusted DATA_DIR to assume class folders are nested inside a 'train' folder. 
-# If your class folders are directly inside 'coffee_leaf_dataset/', remove the '/train' part.
-DATA_DIR = "../Coffee disease dataset/train/" 
+# Set to a higher number of epochs for a better chance of hitting max accuracy before EarlyStopping
+EPOCHS = 50 
+# FIX APPLIED: Ensure the model saves in the native Keras format (.keras) 
+# to suppress the legacy file format warning and use the recommended standard.
+MODEL_PATH = "./coffeescan1_model_final.keras" 
+# FIX: Corrected path name to exactly match user's directory name ("coffee disease dataset")
+# The '../' is necessary because the script is running inside the 'Backend' folder.
+DATA_DIR = "../coffee disease dataset/train/" 
 
 # The class names must match your directory names and the list in the backend
 CLASS_NAMES = [
@@ -163,8 +167,10 @@ early_stopping_callback = EarlyStopping(
 )
 
 # Calculate steps per epoch
-step_size_train = train_generator.n // train_generator.batch_size
-step_size_valid = validation_generator.n // validation_generator.batch_size
+# FIX: Use math.ceil to round up, ensuring the final partial batch is processed, 
+# which avoids the "input ran out of data" warning.
+step_size_train = math.ceil(train_generator.n / train_generator.batch_size)
+step_size_valid = math.ceil(validation_generator.n / validation_generator.batch_size)
 
 print("\n--- Starting Model Training (Fine-Tuning Phase) ---\n")
 
