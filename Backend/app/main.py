@@ -28,26 +28,27 @@ from tensorflow.python.keras.models import load_model
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- UPDATED CONFIG FOR COFFEE ---
-MODEL_PATH = "./best_coffee_disease_model.keras" 
+MODEL_PATH = "./coffeescan_model_final.h5" 
 IMG_HEIGHT = 224 # MobileNetV2 Standard Input
 IMG_WIDTH = 224 # MobileNetV2 Standard Input
 CONFIDENCE_THRESHOLD = 0.70 
 NON_COFFEE_LEAF_CLASS_NAME = "Other_Non_Coffee_Leaf" # Renamed constant
-# The total number of classes (including the non-coffee leaf class)
-NUM_CLASSES = 6 
+
+# FIX: Set to 7 to match the 7 classes output by the training script.
+NUM_CLASSES = 7 
 
 CLASS_NAMES = [
-    'Healthy', 'Coffee Leaf Rust', 'Coffee Leaf Miner', 'Phoma Leaf Spot', 
-    'Red Spider Mite', NON_COFFEE_LEAF_CLASS_NAME
+    'Cerscospora', 'Other_Non_Coffee_Leaf', 'coffee___healthy', 'coffee___red_spider_mite', 'coffee___rust', 'miner', 'phoma'
 ]
-
-# --- RECOMMENDATIONS MAP (Updated for Coffee) ---
+# --- RECOMMENDATIONS MAP (Updated to match exact CLASS_NAMES keys) ---
 RECOMMENDATIONS = {
-    'Coffee Leaf Rust': "Coffee Leaf Rust (La Roya) detected. Use resistant varieties, apply systemic fungicides, and ensure proper shade management. Action: **Fungicide and Shade Management**",
-    'Coffee Leaf Miner': "Coffee Leaf Miner attack. Prune infected leaves, use biological controls (predators/parasites), or targeted insecticides. Action: **Prune and Targeted Insecticides**",
-    'Phoma Leaf Spot': "Phoma Leaf Spot. Reduce canopy density for better airflow, avoid overhead watering, and apply copper-based fungicides if necessary. Action: **Prune and Apply Copper**",
-    'Red Spider Mite': "Red Spider Mite infestation. Apply miticides specifically targeted at mites. Increase humidity and use insecticidal soaps/oils. Action: **Miticides and Humidity**",
-    'Healthy': "Your coffee plant appears healthy! Continue good agricultural practices, including proper fertilization, pest monitoring, and pruning. Action: **Maintain Good Practices**",
+    # FIX: Keys must match the exact class names (e.g., 'coffee___rust' not 'Coffee Leaf Rust')
+    'coffee___rust': "Coffee Leaf Rust (La Roya) detected. Use resistant varieties, apply systemic fungicides, and ensure proper shade management. Action: **Fungicide and Shade Management**",
+    'miner': "Coffee Leaf Miner attack. Prune infected leaves, use biological controls (predators/parasites), or targeted insecticides. Action: **Prune and Targeted Insecticides**",
+    'phoma': "Phoma Leaf Spot. Reduce canopy density for better airflow, avoid overhead watering, and apply copper-based fungicides if necessary. Action: **Prune and Apply Copper**",
+    'coffee___red_spider_mite': "Red Spider Mite infestation. Apply miticides specifically targeted at mites. Increase humidity and use insecticidal soaps/oils. Action: **Miticides and Humidity**",
+    'Cerscospora': "Cercospora Leaf Spot detected. Often caused by poor nutrition or high humidity. Improve soil fertility (especially Potassium/Zinc) and apply fungicides if severe. Action: **Improve Nutrition and Fungicide**",
+    'coffee___healthy': "Your coffee plant appears healthy! Continue good agricultural practices, including proper fertilization, pest monitoring, and pruning. Action: **Maintain Good Practices**",
     NON_COFFEE_LEAF_CLASS_NAME: "The uploaded image is not a coffee leaf. Please ensure you are submitting a clear photo of a coffee leaf for diagnosis. Action: **Retake Photo**"
 }
 
@@ -196,8 +197,8 @@ def save_scan_to_db(user_email: str, diagnosis: str, confidence: float, recommen
 
 def create_model_architecture(input_shape=(IMG_HEIGHT, IMG_WIDTH, 3), num_classes=NUM_CLASSES):
     """
-    Rebuilds the transfer learning model architecture used for CoffeeScan AI.
-    NOTE: The number of classes is set to 6 (5 diseases + 1 non-coffee class)
+    Rebuilds the transfer learning model architecture used for CoffeeScan AI,
+    matching the exact head used in train_model.py.
     """
     try:
         # 1. Load the base MobileNetV2 model pre-trained on ImageNet
@@ -208,24 +209,18 @@ def create_model_architecture(input_shape=(IMG_HEIGHT, IMG_WIDTH, 3), num_classe
         )
         base_model.trainable = False # Freeze the base layers
         
-        # 2. Build the model using the Sequential API to match the common 5-block head
-        # (Assuming the saved model uses this architecture)
-        model = tf.keras.Sequential([
-            # Layer 1: MobileNetV2 Base
-            base_model, 
-            
-            # Layer 2: Global Average Pooling
-            tf.keras.layers.GlobalAveragePooling2D(), 
-            
-            # Layer 3: Hidden Dense Layer (as per template)
-            tf.keras.layers.Dense(512, activation='relu'), 
-            
-            # Layer 4: Dropout Layer (as per template)
-            tf.keras.layers.Dropout(0.5), 
-            
-            # Layer 5: Final Dense Classification Head (6 classes now)
-            tf.keras.layers.Dense(num_classes, activation='softmax') 
-        ])
+        # 2. Build the custom classification head using the Functional API 
+        #    to exactly match the layers in train_model.py:
+        #    GAP -> Dropout(0.5) -> Dense(256) -> Dropout(0.5) -> Dense(N)
+        
+        x = base_model.output
+        x = tf.keras.layers.GlobalAveragePooling2D()(x) # Global Average Pooling
+        x = tf.keras.layers.Dropout(0.5)(x)              # First Dropout
+        x = tf.keras.layers.Dense(256, activation='relu')(x) # Dense(256) layer
+        x = tf.keras.layers.Dropout(0.5)(x)              # Second Dropout
+        predictions = tf.keras.layers.Dense(num_classes, activation='softmax')(x) # Final Classification Head
+        
+        model = tf.keras.Model(inputs=base_model.input, outputs=predictions)
         
         # NOTE: Compiling is required before loading weights
         # Use a generic optimizer/loss just for compilation/weight loading structure

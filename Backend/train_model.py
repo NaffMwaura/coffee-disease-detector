@@ -1,262 +1,183 @@
-import os
-# --- CRITICAL FIX: Set the Keras backend to TensorFlow before importing TF or Keras ---
-os.environ["KERAS_BACKEND"] = "tensorflow"
-
 import tensorflow as tf
-import matplotlib.pyplot as plt
-# We still need MobileNetV2 and its specific preprocessing function
-from keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input
-from keras.layers import Dense, GlobalAveragePooling2D, Dropout
-from keras.models import Model, Sequential
-from keras.optimizers import Adam
-# Removed: from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout
+from tensorflow.keras.models import Model
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+import os
+import numpy as np
+from sklearn.utils import class_weight
 
-# --- Configuration Constants ---
-IMG_SIZE = (224, 224) # MobileNetV2 expects 224x224 input
+# --- Configuration ---
 BATCH_SIZE = 32
-# Ensure this path is correct relative to the 'Backend' folder
-DATA_DIR = '../Coffee disease dataset/train' 
-NUM_CLASSES = 7 
-FINE_TUNE_LAYERS = 50 # Unfreeze the last 50 layers for fine-tuning
-MODEL_SAVE_PATH = 'best_coffee_disease_model.keras'
-AUTOTUNE = tf.data.AUTOTUNE # Optimization constant
+IMG_HEIGHT = 224
+IMG_WIDTH = 224
+EPOCHS = 30 
+MODEL_PATH = "./coffeescan1_model_final.h5" 
+# FIX: Adjusted DATA_DIR to assume class folders are nested inside a 'train' folder. 
+# If your class folders are directly inside 'coffee_leaf_dataset/', remove the '/train' part.
+DATA_DIR = "../Coffee disease dataset/train/" 
 
-# --- Helper function for Data Augmentation (using tf.keras layers) ---
-def get_augmenter():
-    """
-    Creates a Sequential model for on-the-fly data augmentation.
-    """
-    return Sequential([
-        tf.keras.layers.RandomFlip("horizontal"),
-        tf.keras.layers.RandomRotation(0.2),
-        tf.keras.layers.RandomZoom(0.2),
-        tf.keras.layers.RandomTranslation(height_factor=0.2, width_factor=0.2),
-        tf.keras.layers.RandomContrast(0.2),
-    ], name="data_augmenter")
+# The class names must match your directory names and the list in the backend
+CLASS_NAMES = [
+    'Cerscospora', 'Other_Non_Coffee_Leaf', 'coffee___healthy', 
+    'coffee___red_spider_mite', 'coffee___rust', 'miner', 'phoma'
+]
+NUM_CLASSES = len(CLASS_NAMES)
+# ---------------------
 
-# --- Helper function for Preprocessing and Optimization ---
-def prepare_dataset(ds, is_training=False):
-    """
-    Applies MobileNetV2 preprocessing and optimization steps (caching/prefetching).
-    """
-    # Create the augmentation model
-    augmenter = get_augmenter()
+print("TensorFlow Version:", tf.__version__)
 
-    def apply_preprocessing(image, label):
-        # Apply MobileNetV2 specific preprocessing
-        # Note: Datasets yield integer labels, so we convert them to one-hot encoding here
-        image = preprocess_input(image)
-        label = tf.one_hot(label, depth=NUM_CLASSES)
-        return image, label
+# --- 1. Data Preparation with Advanced Augmentation ---
+# Create an ImageDataGenerator instance for training data with enhanced augmentation
+train_datagen = ImageDataGenerator(
+    rescale=1./255,
+    # FIX: Added aggressive augmentation for better generalization, crucial for visual confusion
+    rotation_range=20,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    shear_range=0.1,
+    zoom_range=0.2,
+    horizontal_flip=True, # Added flip
+    fill_mode='nearest',
+    validation_split=0.2 # Use 20% of data for validation
+)
 
-    # Apply preprocessing (rescaling, one-hot encoding) to all datasets
-    ds = ds.map(apply_preprocessing, num_parallel_calls=AUTOTUNE)
+# Generator for training data
+train_generator = train_datagen.flow_from_directory(
+    DATA_DIR,
+    target_size=(IMG_HEIGHT, IMG_WIDTH),
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='training',
+    seed=42 # Ensure reproducibility
+)
 
-    if is_training:
-        # Apply augmentation only to the training set
-        def apply_augmentation(image, label):
-            image = augmenter(image, training=True)
-            return image, label
-        ds = ds.map(apply_augmentation, num_parallel_calls=AUTOTUNE)
-        
-    # Cache and prefetch for performance
-    return ds.cache().prefetch(buffer_size=AUTOTUNE)
+# Generator for validation data (only scaling and subset separation)
+validation_generator = train_datagen.flow_from_directory(
+    DATA_DIR,
+    target_size=(IMG_HEIGHT, IMG_WIDTH),
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='validation',
+    seed=42
+)
 
-# --- 1. Data Loading (Using tf.keras.utils.image_dataset_from_directory) ---
-def load_and_augment_data():
-    """
-    Loads data using the modern tf.data API and applies augmentation.
-    """
-    print("Loading data and setting up tf.data.Datasets...")
-
-    # Load Training Dataset (80%)
-    train_ds = tf.keras.utils.image_dataset_from_directory(
-        DATA_DIR,
-        labels='inferred',
-        label_mode='int', # Use integer labels first, convert to one-hot later
-        image_size=IMG_SIZE,
-        batch_size=BATCH_SIZE,
-        subset='training',
-        validation_split=0.2, # Use 20% for validation
-        seed=123
-    )
+# --- 2. Calculate Class Weights (Fixing Data Imbalance) ---
+# This step automatically gives confusing/rare classes more weight in the loss function.
+def calculate_class_weights(generator):
+    """Calculates class weights based on the training data distribution."""
+    # Get all class indices for the training data
+    class_indices = generator.classes
     
-    # Load Validation Dataset (20%)
-    validation_ds = tf.keras.utils.image_dataset_from_directory(
-        DATA_DIR,
-        labels='inferred',
-        label_mode='int', 
-        image_size=IMG_SIZE,
-        batch_size=BATCH_SIZE,
-        subset='validation',
-        validation_split=0.2, 
-        seed=123
+    # Calculate balanced weights
+    weights = class_weight.compute_class_weight(
+        'balanced', 
+        classes=np.unique(class_indices), 
+        y=class_indices
     )
+    # Map weights to a dictionary where keys are class indices
+    return dict(enumerate(weights))
 
-    # --- FIX: Capture class_names before the dataset is processed and loses the attribute ---
-    class_names = train_ds.class_names 
-    print(f"Detected classes: {class_names}")
+class_weights = calculate_class_weights(train_generator)
+print("Calculated Class Weights:", class_weights)
 
-    # Apply preprocessing, one-hot conversion, augmentation, caching, and prefetching
-    train_generator = prepare_dataset(train_ds, is_training=True)
-    validation_generator = prepare_dataset(validation_ds, is_training=False)
-    
-    # Return the processed datasets and the class names list
-    return train_generator, validation_generator, class_names
+# --- 3. Model Architecture and Fine-Tuning (Fixing Feature Extraction) ---
 
-# --- 2. Model Definition ---
-def build_transfer_model(num_classes):
+def build_fine_tuned_model(input_shape=(IMG_HEIGHT, IMG_WIDTH, 3), num_classes=NUM_CLASSES):
     """
-    Builds the MobileNetV2 base model and adds a custom classification head.
+    Builds the MobileNetV2 model with a custom head and prepares for fine-tuning.
+    We are matching the architecture confirmed in the backend model_trainer.py.
     """
-    # Load MobileNetV2, pre-trained on ImageNet, without the top classification layer
+    # Load the base MobileNetV2 model pre-trained on ImageNet
     base_model = MobileNetV2(
-        weights='imagenet', 
-        include_top=False, 
-        input_shape=IMG_SIZE + (3,) # Adds the 3 color channels
+        input_shape=input_shape,
+        include_top=False, # We use our own classification head
+        weights='imagenet'
     )
+    
+    # --- Transfer Learning Phase (Freeze All Base Layers) ---
+    base_model.trainable = False 
+    print("Initial phase: Base MobileNetV2 layers are frozen.")
+    
 
-    # --- Add the custom classification head ---
+    # Define the custom classification head using the Functional API
     x = base_model.output
-    x = GlobalAveragePooling2D()(x)
-    x = Dropout(0.5)(x) # Add Dropout to further prevent overfitting
-    x = Dense(256, activation='relu')(x)
-    x = Dropout(0.5)(x) # Second Dropout layer
-    predictions = Dense(num_classes, activation='softmax')(x) # Output layer
+    x = GlobalAveragePooling2D()(x) 
+    x = Dropout(0.5)(x) 
+    x = Dense(256, activation='relu')(x) # Dense layer as confirmed in the backend
+    x = Dropout(0.5)(x) 
+    predictions = Dense(num_classes, activation='softmax')(x) 
 
-    # Final model combining base and new head
     model = Model(inputs=base_model.input, outputs=predictions)
     
-    return model, base_model
-
-# --- 3. Training Function ---
-def train_model():
-    """
-    Implements the two-stage training process (Feature Extraction and Fine-Tuning).
-    """
-    # --- FIX: Unpack the class_names list returned by load_and_augment_data ---
-    train_ds, validation_ds, class_names_list = load_and_augment_data()
-    
-    global NUM_CLASSES
-    # Infer number of classes from the captured class names list
-    NUM_CLASSES = len(class_names_list) 
-
-    model, base_model = build_transfer_model(NUM_CLASSES)
-
-    # --- Phase 1: Feature Extraction (Training only the top layers) ---
-    print("\n--- PHASE 1: FEATURE EXTRACTION (Training Top Layers) ---")
-    
-    # Freeze the base model layers
-    for layer in base_model.layers:
-        layer.trainable = False
-
-    # Compile the model with a moderate learning rate
-    base_learning_rate = 1e-3 # 0.001
+    # Compile the model for the first (transfer learning) phase
     model.compile(
-        optimizer=Adam(learning_rate=base_learning_rate),
-        loss='categorical_crossentropy',
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
+        loss='categorical_crossentropy', 
         metrics=['accuracy']
     )
     
-    print(model.summary())
-    
-    # Define Callbacks
-    callbacks = [
-        EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
-        ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_accuracy', save_best_only=True, mode='max'),
-    ]
-
-    initial_epochs = 10
-    
-    # Use the tf.data.Dataset objects for training
-    history_feature_extraction = model.fit(
-        train_ds,
-        epochs=initial_epochs,
-        validation_data=validation_ds,
-        callbacks=callbacks
-    )
-
-    # --- Phase 2: Fine-Tuning (Unfreezing top layers of base model) ---
-    print("\n--- PHASE 2: FINE-TUNING (Unfreezing Top Layers of MobileNetV2) ---")
-
-    # Unfreeze the base model
+    # --- Fine-Tuning Setup Phase (Unfreeze the last block) ---
+    # Unfreeze the last ~50 layers (to allow learning coffee-specific features)
     base_model.trainable = True
-
-    # Freeze all layers up to a specific point (e.g., last 50 layers)
-    for layer in base_model.layers[:-FINE_TUNE_LAYERS]:
+    
+    # Freeze all layers *except* the ones in the last block (index -50)
+    for layer in base_model.layers[:-50]:
         layer.trainable = False
+        
+    print(f"Fine-tuning phase: The last {len(base_model.layers) - 50} layers are unfrozen.")
+    
 
-    # Ensure the frozen layers are actually non-trainable
-    for layer in base_model.layers:
-        if layer.name.startswith('block') and layer.trainable:
-            print(f"Layer {layer.name} is now trainable for fine-tuning.")
-
-
-    # Compile the model again with a very low learning rate
-    fine_tune_learning_rate = 1e-5 # 0.00001 - 100x smaller than the initial rate
+    # Re-compile with a lower learning rate for fine-tuning
     model.compile(
-        optimizer=Adam(learning_rate=fine_tune_learning_rate),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5), # CRITICAL: Very low LR for fine-tuning
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
     
-    # Add a learning rate scheduler for fine-tuning
-    callbacks_fine_tune = callbacks + [
-        ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=1e-7)
-    ]
+    return model
 
-    fine_tune_epochs = 20
-    total_epochs = initial_epochs + fine_tune_epochs
-
-    history_fine_tune = model.fit(
-        train_ds,
-        epochs=total_epochs,
-        initial_epoch=history_feature_extraction.epoch[-1],
-        validation_data=validation_ds,
-        callbacks=callbacks_fine_tune
-    )
-
-    print(f"\nTraining complete. The best model weights are saved to {MODEL_SAVE_PATH}")
-    
-    # Function to plot results (optional but highly recommended)
-    plot_history(history_feature_extraction, history_fine_tune, total_epochs)
+# Build the model
+model = build_fine_tuned_model()
+model.summary()
 
 
-def plot_history(history_1, history_2, total_epochs):
-    """Plots training and validation metrics for both phases."""
-    # Ensure history objects are lists of metrics
-    acc = history_1.history['accuracy'] + history_2.history['accuracy']
-    val_acc = history_1.history['val_accuracy'] + history_2.history['val_accuracy']
+# --- 4. Callbacks and Training ---
 
-    loss = history_1.history['loss'] + history_2.history['loss']
-    val_loss = history_1.history['val_loss'] + history_2.history['val_loss']
+# ModelCheckpoint: Save only the best model based on validation accuracy
+checkpoint_callback = ModelCheckpoint(
+    MODEL_PATH, 
+    monitor='val_accuracy', 
+    save_best_only=True, 
+    mode='max', 
+    verbose=1
+)
 
-    plt.figure(figsize=(10, 8))
-    plt.subplot(2, 1, 1)
-    plt.plot(acc, label='Training Accuracy')
-    plt.plot(val_acc, label='Validation Accuracy')
-    plt.ylim([0.0, 1.0])
-    plt.plot([len(history_1.epoch)-1, len(history_1.epoch)-1],
-             plt.ylim(), label='Start Fine-Tuning', linestyle='--')
-    plt.legend(loc='lower right')
-    plt.title('Training and Validation Accuracy')
+# EarlyStopping: Stop training if validation accuracy doesn't improve for 10 epochs
+early_stopping_callback = EarlyStopping(
+    monitor='val_accuracy', 
+    patience=10, 
+    restore_best_weights=True, 
+    mode='max'
+)
 
-    plt.subplot(2, 1, 2)
-    plt.plot(loss, label='Training Loss')
-    plt.plot(val_loss, label='Validation Loss')
-    plt.plot([len(history_1.epoch)-1, len(history_1.epoch)-1],
-             plt.ylim(), label='Start Fine-Tuning', linestyle='--')
-    plt.legend(loc='upper right')
-    plt.title('Training and Validation Loss')
-    plt.xlabel('epoch')
-    plt.show()
+# Calculate steps per epoch
+step_size_train = train_generator.n // train_generator.batch_size
+step_size_valid = validation_generator.n // validation_generator.batch_size
 
-if __name__ == '__main__':
-    # Setting up the environment check
-    if not os.path.isdir(DATA_DIR):
-        print("ERROR: DATA_DIR not found. Please ensure your dataset folder is structured correctly:")
-        print("The folder 'Coffee disease dataset' must be one level above the 'Backend' folder.")
-        print(f"Expected path: {DATA_DIR}")
-    else:
-        train_model()
+print("\n--- Starting Model Training (Fine-Tuning Phase) ---\n")
+
+history = model.fit(
+    train_generator,
+    steps_per_epoch=step_size_train,
+    epochs=EPOCHS,
+    validation_data=validation_generator,
+    validation_steps=step_size_valid,
+    callbacks=[checkpoint_callback, early_stopping_callback],
+    class_weight=class_weights, # FIX: Applying calculated weights here
+    verbose=1
+)
+
+print(f"\nTraining Complete. Best model saved to {MODEL_PATH}")
+print(f"Best Validation Accuracy achieved: {max(history.history['val_accuracy']):.4f}")
