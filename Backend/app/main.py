@@ -538,4 +538,6 @@ async def get_scans_endpoint(user_email: str, conn: psycopg2.connect = Depends(g
 
 # Main block for running the application
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Use the PORT environment variable if it exists (for Render), otherwise default to 8000 (for local development)
+    PORT = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=PORT)
