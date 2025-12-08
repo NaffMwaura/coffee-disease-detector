@@ -1,11 +1,13 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Upload, Loader2, Grid, User, Settings, LogOut, ChevronDown } from 'lucide-react';
+import { Upload, Loader2, Grid, User, Settings, LogOut, ChevronDown, Trash2 } from 'lucide-react';
 import type { DashboardPageProps, AnalysisResult } from '../../types';
 import { API_BASE_URL } from '../../types';
 import AlertMessage from '../ui/AlertMessage';
 import { IconMicroscope, IconLeaf } from '../ui/Icons';
 
-
+/* ========================================================================
+   PROFILE DROPDOWN
+======================================================================== */
 interface ProfileDropdownProps {
     userEmail: string;
     onLogout: () => void;
@@ -18,6 +20,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({ userEmail, onLogout }
     return (
         <div className="relative z-50 pt-8">
             <button
+                aria-label="Toggle profile dropdown"
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center space-x-2 bg-gray-700 hover:bg-gray-800 text-amber-300 p-2 rounded-full transition-colors shadow-md"
             >
@@ -29,21 +32,19 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({ userEmail, onLogout }
             </button>
 
             {isOpen && (
-                <div
-                    className="absolute right-0 mt-2 w-64 bg-gray-800 rounded-xl shadow-2xl border border-gray-700 py-2 text-amber-300"
-                    onMouseLeave={() => setIsOpen(false)}
-                >
+                <div className="absolute right-0 mt-2 w-64 bg-gray-800 rounded-xl shadow-2xl border border-gray-700 py-2 text-amber-300">
                     <div className="px-4 py-2 text-sm font-semibold border-b border-gray-700">Profile</div>
 
-                    <button className="flex items-center space-x-3 w-full px-4 py-2 hover:bg-gray-700 transition-colors">
+                    <button aria-label="My Account" className="flex items-center space-x-3 w-full px-4 py-2 hover:bg-gray-700 transition-colors">
                         <User className="h-4 w-4 text-amber-400" /> My Account
                     </button>
 
-                    <button className="flex items-center space-x-3 w-full px-4 py-2 hover:bg-gray-700 transition-colors">
+                    <button aria-label="Update Settings" className="flex items-center space-x-3 w-full px-4 py-2 hover:bg-gray-700 transition-colors">
                         <Settings className="h-4 w-4 text-amber-400" /> Update Settings
                     </button>
 
                     <button
+                        aria-label="Logout"
                         onClick={onLogout}
                         className="flex items-center space-x-3 w-full px-4 py-2 hover:bg-red-600 transition-colors text-red-500 border-t mt-1"
                     >
@@ -56,7 +57,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({ userEmail, onLogout }
 };
 
 /* ========================================================================
-   DASHBOARD HEADER — RETAINED (Fixed position)
+   DASHBOARD HEADER
 ======================================================================== */
 const DashboardHeader: React.FC<DashboardPageProps> = (props) => (
     <div className="fixed top-0 left-0 right-0 bg-gray-900/95 backdrop-blur-md py-4 px-5 shadow-xl z-50 border-b border-gray-800">
@@ -71,31 +72,19 @@ const DashboardHeader: React.FC<DashboardPageProps> = (props) => (
 );
 
 /* ========================================================================
-   DASHBOARD PAGE (MAIN)
+   MAIN DASHBOARD PAGE
 ======================================================================== */
-const DashboardPage: React.FC<DashboardPageProps> = ({
-    userToken,
-    userId,
-    userEmail,
-    onLogout
-}) => {
-
-    // 🛑 CRITICAL FIX: Direct Body Style Manipulation
+const DashboardPage: React.FC<DashboardPageProps> = ({ userToken, userId, userEmail, onLogout }) => {
     useEffect(() => {
-        // Save original styles to restore them later
-        const originalBodyMargin = document.body.style.margin;
-        const originalBodyPadding = document.body.style.padding;
-        
-        // Apply zero margin and padding to the body element
+        const originalMargin = document.body.style.margin;
+        const originalPadding = document.body.style.padding;
         document.body.style.margin = '0';
         document.body.style.padding = '0';
-
-        // Cleanup function: runs when the component unmounts (e.g., navigating away)
         return () => {
-            document.body.style.margin = originalBodyMargin;
-            document.body.style.padding = originalBodyPadding;
+            document.body.style.margin = originalMargin;
+            document.body.style.padding = originalPadding;
         };
-    }, []); // Empty dependency array ensures this runs once on mount and cleanup runs on unmount
+    }, []);
 
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [results, setResults] = useState<AnalysisResult[]>([]);
@@ -103,14 +92,39 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const [uploadMessage, setUploadMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-    /* --------------------------------------------------------------------
-       Fetch Saved Scans (Logic remains the same)
-    -------------------------------------------------------------------- */
+    /* =====================================================================
+       DELETE SCAN
+    ===================================================================== */
+    const handleDeleteScan = async (scanId: string | number | undefined) => {
+        if (!scanId) return;
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/delete_scan/${scanId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(userToken ? { Authorization: `Bearer ${userToken}` } : {})
+                }
+            });
+
+            await res.json().catch(() => null);
+
+            if (!res.ok) return setUploadMessage({ text: "Failed to delete scan.", type: 'error' });
+
+            setResults(prev => prev.filter(r => r.scan_id !== scanId));
+            setUploadMessage({ text: "Scan deleted successfully.", type: 'success' });
+        } catch {
+            setUploadMessage({ text: "Network error while deleting scan.", type: 'error' });
+        }
+    };
+
+    /* =====================================================================
+       FETCH SAVED SCANS
+    ===================================================================== */
     const fetchSavedScans = useCallback(async () => {
         if (!userEmail) return setResults([]);
 
         setIsLoading(true);
-
         try {
             const res = await fetch(`${API_BASE_URL}/get_scans/${encodeURIComponent(userEmail)}`, {
                 method: 'GET',
@@ -121,36 +135,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             });
 
             const json = await res.json().catch(() => null);
+            if (!res.ok || !json?.scans) return setResults([]);
 
-            if (!res.ok || !json || !Array.isArray(json.scans)) {
-                setResults([]);
-                return;
-            }
-
-const serverResults = json.scans.map((s: any) => ({
-                filename: `Scan ID: ${s.scan_id || 'N/A'}`,
-                // 👇 CORRECTED: Use the 'prediction' key from the backend response
-                prediction: s.prediction || 'Unknown', 
-                
-                // 👇 CORRECTED: Use the 'confidence' key from the backend response
-                confidence: typeof s.confidence === 'number' ? s.confidence : 0, 
-                
-                // 👇 CORRECTED: Use the 'date' key from the backend response for timestamp
-                timestamp: s.date ? new Date(s.date).toLocaleString() : 'Date Unavailable', 
-                
-                // 👇 CORRECTED: treatment_recommendation key is the same
-                recommendation: s.treatment_recommendation || 'No recommendation provided.',
-                
-                message: s.message, // Assuming message is still part of the response if applicable
-                status: s.status, // Assuming status is still part of the response if applicable
+            setResults(json.scans.map((s: any) => ({
+                filename: `Scan ID: ${s.scan_id}`,
+                prediction: s.prediction || 'Unknown',
+                confidence: s.confidence ?? 0,
+                timestamp: s.date ? new Date(s.date).toLocaleString() : 'Date Unavailable',
+                recommendation: s.treatment_recommendation || 'No recommendation.',
+                status: s.status,
+                message: s.message,
                 image: s.image_link,
                 scan_id: s.scan_id
-            }));
-
-            setResults(serverResults);
-        } catch (err) {
-            console.error('Error fetching scans:', err);
-            setResults([]);
+            })));
         } finally {
             setIsLoading(false);
         }
@@ -160,96 +157,89 @@ const serverResults = json.scans.map((s: any) => ({
         if (userEmail) fetchSavedScans();
     }, [userEmail, fetchSavedScans]);
 
-    /* --------------------------------------------------------------------
-       File Change Handler (Logic remains the same)
-    -------------------------------------------------------------------- */
+    /* =====================================================================
+       FILE UPLOAD
+    ===================================================================== */
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         if (event.target.files?.length) {
             const file = event.target.files[0];
+
+            if (file.size > 5 * 1024 * 1024) {
+                setUploadMessage({ text: 'File too large. Max 5MB.', type: 'error' });
+                return;
+            }
+
             setSelectedFile(file);
             setPreviewUrl(URL.createObjectURL(file));
             setUploadMessage(null);
         }
     };
 
-    /* --------------------------------------------------------------------
-       Upload + Predict (Logic remains the same)
-    -------------------------------------------------------------------- */
-    const handleUpload = useCallback(
-        async (e: React.FormEvent) => {
-            e.preventDefault();
-            if (!selectedFile)
-                return setUploadMessage({ text: 'Please select an image.', type: 'error' });
+    /* =====================================================================
+       UPLOAD AND PREDICT
+    ===================================================================== */
+    const handleUpload = useCallback(async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedFile)
+            return setUploadMessage({ text: 'Please select an image.', type: 'error' });
 
-            setIsLoading(true);
-            setUploadMessage(null);
+        setIsLoading(true);
+        setUploadMessage(null);
 
-            try {
-                const formData = new FormData();
-                formData.append('file', selectedFile);
-                formData.append('user_email', userEmail);
+        try {
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('user_email', userEmail);
 
-                const predictRes = await fetch(`${API_BASE_URL}/predict`, {
-                    method: 'POST',
-                    headers: { ...(userToken ? { Authorization: `Bearer ${userToken}` } : {}) },
-                    body: formData
-                });
+            const res = await fetch(`${API_BASE_URL}/predict`, {
+                method: 'POST',
+                headers: { ...(userToken ? { Authorization: `Bearer ${userToken}` } : {}) },
+                body: formData
+            });
 
-                const predictData = await predictRes.json().catch(() => null);
+            const data = await res.json().catch(() => null);
 
-                if (!predictRes.ok) {
-                    setUploadMessage({
-                        text: predictData?.message || 'Analysis failed.',
-                        type: 'error'
-                    });
-
-                    if ([401, 403].includes(predictRes.status)) onLogout();
-                    return;
-                }
-
-                const newResult: AnalysisResult = {
-                    filename: selectedFile.name,
-                    prediction: predictData.prediction,
-                    confidence: predictData.confidence,
-                    timestamp: new Date().toLocaleString(),
-                    status: predictData.status,
-                    message: predictData.message,
-                    recommendation: predictData.recommendation,
-                    scan_id: predictData.save_status === 'SAVED_SUCCESS' ? predictData.scan_id : undefined
-                };
-
-                if (predictData.save_status === 'SAVED_SUCCESS') {
-                    setUploadMessage({ text: 'Scan saved to history.', type: 'success' });
-                    await fetchSavedScans();
-                }
-
-                setResults(prev => [newResult, ...prev]);
-                setSelectedFile(null);
-                setPreviewUrl(null);
-
-            } catch (error) {
-                console.error('Upload Error:', error);
-                setUploadMessage({
-                    text: 'Network error. Check backend connection.',
-                    type: 'error'
-                });
-            } finally {
-                setIsLoading(false);
+            if (!res.ok) {
+                setUploadMessage({ text: data?.message || 'Analysis failed.', type: 'error' });
+                return;
             }
-        },
-        [selectedFile, userToken, userEmail, onLogout]
-    );
+
+            const newResult: AnalysisResult = {
+                filename: selectedFile.name,
+                prediction: data.prediction,
+                confidence: data.confidence,
+                timestamp: new Date().toLocaleString(),
+                status: data.status,
+                message: data.message,
+                recommendation: data.recommendation,
+                scan_id: data.save_status === 'SAVED_SUCCESS' ? data.scan_id : undefined
+            };
+
+            if (data.save_status === 'SAVED_SUCCESS') {
+                await fetchSavedScans();
+                setUploadMessage({ text: 'Scan saved to history.', type: 'success' });
+            }
+
+            setResults(prev => [newResult, ...prev]);
+            setSelectedFile(null);
+            setPreviewUrl(null);
+
+        } catch {
+            setUploadMessage({ text: 'Network error.', type: 'error' });
+
+        } finally {
+            setIsLoading(false);
+        }
+    }, [selectedFile, userToken, userEmail, fetchSavedScans]);
 
     /* =====================================================================
-       PAGE CONTENT - NO wrapper needed, let the Header handle position
+       PAGE UI
     ===================================================================== */
     return (
         <>
-            {/* HEADER */}
             <DashboardHeader userEmail={userEmail} userId={userId} userToken={userToken} onLogout={onLogout} />
 
-            {/* Main content container with padding-top to compensate for the fixed header height */}
-            <div className="min-h-screen bg-gray-900 pt-[4.5rem] p-4 sm:p-8 text-amber-300"> 
+            <div className="min-h-screen bg-gray-900 pt-[4.5rem] p-4 sm:p-8 text-amber-300">
                 <div className="max-w-7xl mx-auto">
 
                     <header className="mb-8 p-6 bg-gray-800 rounded-2xl shadow-xl border-l-4 border-amber-500">
@@ -257,7 +247,6 @@ const serverResults = json.scans.map((s: any) => ({
                             <Grid className="h-6 w-6 text-amber-500" />
                             <span>Farmer Dashboard</span>
                         </h1>
-
                         <p className="mt-2 text-amber-400">
                             Welcome, <span className="font-mono p-1 bg-gray-700 rounded">{userEmail}</span>.
                         </p>
@@ -265,7 +254,7 @@ const serverResults = json.scans.map((s: any) => ({
 
                     <div className="grid lg:grid-cols-3 gap-8">
 
-                        {/* ================== Upload Section ================== */}
+                        {/* ======================= Upload Section ======================= */}
                         <div className="lg:col-span-1 bg-gray-800 p-6 rounded-2xl shadow-xl h-fit sticky top-[90px]">
                             <h2 className="text-xl sm:text-2xl font-bold mb-4 border-b border-amber-500 pb-2">New Scan</h2>
 
@@ -273,26 +262,18 @@ const serverResults = json.scans.map((s: any) => ({
 
                             <form onSubmit={handleUpload}>
                                 <div className="mb-4">
-                                    <label className="block text-sm font-medium mb-2">
-                                        Select Tea Leaf Image (JPG/PNG)
-                                    </label>
+                                    <label className="block text-sm font-medium mb-2">Select Tea Leaf Image (JPG/PNG)</label>
 
                                     <label
                                         htmlFor="file-upload"
                                         className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-amber-500 rounded-xl cursor-pointer bg-gray-900 hover:bg-gray-800 transition-colors"
                                     >
                                         {previewUrl ? (
-                                            <img
-                                                src={previewUrl}
-                                                alt="Preview"
-                                                className="h-full w-full object-cover rounded-xl p-1"
-                                            />
+                                            <img src={previewUrl} alt={`Preview of ${selectedFile?.name}`} className="h-full w-full object-cover rounded-xl p-1" />
                                         ) : (
                                             <div className="flex flex-col items-center justify-center pt-5 pb-6">
                                                 <Upload className="w-10 h-10 mb-3 text-amber-500" />
-                                                <p className="text-sm">
-                                                    <span className="font-semibold">Click to upload</span> or drag and drop
-                                                </p>
+                                                <p className="text-sm"><span className="font-semibold">Click to upload</span> or drag and drop</p>
                                                 <p className="text-xs">{selectedFile?.name || 'Max 5MB'}</p>
                                             </div>
                                         )}
@@ -303,6 +284,7 @@ const serverResults = json.scans.map((s: any) => ({
                                             className="hidden"
                                             accept="image/jpeg,image/png"
                                             onChange={handleFileChange}
+                                            aria-label="Select tea leaf image"
                                         />
                                     </label>
                                 </div>
@@ -315,6 +297,7 @@ const serverResults = json.scans.map((s: any) => ({
                                             ? 'bg-amber-700/50 cursor-not-allowed'
                                             : 'bg-amber-500 hover:bg-amber-400'
                                     }`}
+                                    aria-label="Run AI Scan"
                                 >
                                     {isLoading ? (
                                         <>
@@ -331,7 +314,7 @@ const serverResults = json.scans.map((s: any) => ({
                             </form>
                         </div>
 
-                        {/* ================== Scan History Section ================== */}
+                        {/* ======================= Scan History ======================= */}
                         <div className="lg:col-span-2 bg-gray-800 p-6 rounded-2xl shadow-xl">
                             <h2 className="text-xl sm:text-2xl font-bold mb-6 border-b border-amber-500 pb-2">
                                 Scan History ({results.length})
@@ -344,19 +327,14 @@ const serverResults = json.scans.map((s: any) => ({
                                 </div>
                             ) : (
                                 <div className="space-y-4">
-                                    {results.map((result, index) => (
-                                        <div
-                                            key={index}
-                                            className="p-4 border border-amber-700 rounded-xl bg-gray-900 shadow-sm hover:shadow-md transition"
-                                        >
-                                            <div className="flex items-center justify-between mb-2">
+                                    {results.map((result, idx) => (
+                                        <div key={idx} className="p-4 border border-amber-700 rounded-xl bg-gray-900 shadow-sm hover:shadow-md transition">
+
+                                            {/* TOP ROW */}
+                                            <div className="flex justify-between items-start mb-2">
                                                 <div className="flex items-center space-x-4">
                                                     <IconLeaf
-                                                        className={`h-8 w-8 ${
-                                                            result.prediction === 'Healthy'
-                                                                ? 'text-amber-500'
-                                                                : 'text-red-500'
-                                                        }`}
+                                                        className={`h-8 w-8 ${result.prediction === 'Healthy' ? 'text-amber-500' : 'text-red-500'}`}
                                                     />
                                                     <div>
                                                         <p className="text-lg font-semibold">{result.prediction}</p>
@@ -364,26 +342,41 @@ const serverResults = json.scans.map((s: any) => ({
                                                     </div>
                                                 </div>
 
-                                                <div className="text-right">
-                                                    <p className="text-2xl font-bold text-amber-400">
-                                                        {(result.confidence * 100).toFixed(1)}%
-                                                    </p>
-                                                    <p className="text-xs text-amber-400">Confidence</p>
+                                                <div className="flex flex-col items-end space-y-2">
+                                                    <div>
+                                                        <p className="text-2xl font-bold text-amber-400">
+                                                            {(result.confidence * 100).toFixed(1)}%
+                                                        </p>
+                                                        <p className="text-xs text-amber-400">Confidence</p>
+                                                    </div>
+
+                                                    {result.scan_id && (
+                                                        <button
+                                                            aria-label="Delete scan"
+                                                            onClick={() => handleDeleteScan(result.scan_id)}
+                                                            className="bg-red-700 hover:bg-red-600 text-white p-2 rounded-full shadow-md transition-transform duration-200 hover:scale-110"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
 
+                                            {/* MESSAGE */}
                                             {result.message && (
                                                 <div className="mt-2 p-3 bg-gray-800 border border-amber-700 rounded text-sm text-amber-300">
                                                     {result.message}
                                                 </div>
                                             )}
 
+                                            {/* RECOMMENDATION */}
                                             {result.recommendation && (
                                                 <div className="mt-3 p-3 bg-gray-900 border border-amber-700 rounded text-sm text-amber-300">
                                                     <h4 className="font-semibold mb-1">Recommendation</h4>
                                                     <p>{result.recommendation}</p>
                                                 </div>
                                             )}
+
                                         </div>
                                     ))}
                                 </div>
@@ -391,6 +384,7 @@ const serverResults = json.scans.map((s: any) => ({
                         </div>
 
                     </div>
+
                 </div>
             </div>
         </>

@@ -1,4 +1,4 @@
-export const API_BASE_URL = 'http://127.0.0.1:8000' ; 
+export const API_BASE_URL = 'https://coffee-disease-detector.onrender.com' ; 
 export const LOGIN_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 export type Page = 'landing' | 'auth' | 'dashboard';
