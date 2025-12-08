@@ -16,7 +16,7 @@ BATCH_SIZE = 32
 DATA_DIR = '../Coffee disease dataset/train' # Path confirmed in previous exchange
 NUM_CLASSES = 7 # Assuming 7 classes (6 diseases + 1 healthy)
 FINE_TUNE_LAYERS = 50 # Unfreeze the last 50 layers for fine-tuning
-MODEL_SAVE_PATH = 'best_coffee_disease2_model.keras'
+MODEL_SAVE_PATH = 'best_coffee_disease2_model.h5'
 
 # --- 1. Data Loading and Augmentation ---
 def load_and_augment_data():
@@ -140,9 +140,10 @@ def train_model():
     
     # Define Callbacks
     callbacks = [
-        EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
-        ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_accuracy', save_best_only=True, mode='max'),
-    ]
+    EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
+    # Explicitly use the 'h5' format for maximum compatibility
+    ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_accuracy', save_best_only=True, mode='max', save_format='h5'), 
+        ]
 
     initial_epochs = 10
     

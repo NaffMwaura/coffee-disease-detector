@@ -5,7 +5,7 @@ load_dotenv()
 import io
 import numpy as np
 import tensorflow as tf
-from PIL import Image
+from PIL import Image 
 from typing import Dict, Any, List, Optional
 import time 
 import bcrypt
@@ -28,7 +28,7 @@ from tensorflow.python.keras.models import load_model
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- UPDATED CONFIG FOR COFFEE ---
-MODEL_PATH = "./best_coffee_disease2_model.keras" 
+MODEL_PATH = "./best_coffee_disease2_model.h5" 
 IMG_HEIGHT = 224 # MobileNetV2 Standard Input
 IMG_WIDTH = 224 # MobileNetV2 Standard Input 
 CONFIDENCE_THRESHOLD = 0.70 
