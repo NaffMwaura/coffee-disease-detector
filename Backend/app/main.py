@@ -487,6 +487,39 @@ async def logout_user():
     """
     return {"message": "Logout successful. Client must destroy local session/token."}
 
+
+@app.delete("/delete_scan/{scan_id}", tags=["History (PostgreSQL)"])
+def delete_scan(scan_id: int, conn: psycopg2.connect = Depends(get_db_connection)):
+    """
+    Deletes a specific scan by its scan_id from the database.
+    Returns success or failure message.
+    """
+    try:
+        with conn.cursor() as cur:
+            # Check if the scan exists
+            cur.execute("SELECT scan_id FROM scans WHERE scan_id = %s;", (scan_id,))
+            if not cur.fetchone():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Scan with ID {scan_id} not found."
+                )
+
+            # Delete the scan
+            cur.execute("DELETE FROM scans WHERE scan_id = %s;", (scan_id,))
+            conn.commit()
+            
+            return {"message": f"Scan with ID {scan_id} deleted successfully."}
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        conn.rollback()
+        print(f"Database error while deleting scan {scan_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete scan {scan_id} due to server error."
+        )
+
 @app.get("/diseases", tags=["DB Data"], response_model=List[Dict[str, Any]])
 def get_disease_list(conn: psycopg2.connect = Depends(get_db_connection)):
     """Fetches a list of known diseases from the database."""
@@ -541,3 +574,4 @@ if __name__ == "__main__":
     # Use the PORT environment variable if it exists (for Render), otherwise default to 8000 (for local development)
     PORT = int(os.environ.get("PORT", 8000))
     uvicorn.run("app.main:app", host="0.0.0.0", port=PORT)
+    
