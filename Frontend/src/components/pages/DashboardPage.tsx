@@ -469,7 +469,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ userToken, userId, userEm
 
     const [results, setResults] = useState<AnalysisResult[]>([]);
     const [currentView, setCurrentView] = useState<'home' | 'scan'>('home'); // State to manage views
-    const [isFetchingHistory, setIsFetchingHistory] = useState(false);
+    const [, setIsFetchingHistory] = useState(false);
 
     
     /* --- DELETE SCAN (Centralized) --- */
