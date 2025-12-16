@@ -362,7 +362,7 @@ const ScanPage: React.FC<ScanPageProps> = ({
                             ) : (
                                 <>
                                     <Zap className="h-5 w-5" />
-                                    <span>Run AI Scan</span>
+                                    <span>Scan</span>
                                 </>
                             )}
                         </button>
