@@ -1,8 +1,8 @@
 import tensorflow as tf
 import os
 import matplotlib.pyplot as plt
-# IMPORTANT: Since we pinned tensorflow==2.10.0, we must use the Keras API
-# that comes bundled with it, which is often accessible via tf.keras.
+
+
 from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
 from tensorflow.keras.models import Model
@@ -10,15 +10,15 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 
-# --- Configuration Constants ---
-IMG_SIZE = (224, 224) # MobileNetV2 expects 224x224 input
+
+IMG_SIZE = (224, 224) 
 BATCH_SIZE = 32
-DATA_DIR = '../Coffee disease dataset/train' # Path confirmed in previous exchange
-NUM_CLASSES = 7 # Assuming 7 classes (6 diseases + 1 healthy)
-FINE_TUNE_LAYERS = 50 # Unfreeze the last 50 layers for fine-tuning
+DATA_DIR = '../Coffee disease dataset/train' 
+NUM_CLASSES = 7 
+FINE_TUNE_LAYERS = 50 
 MODEL_SAVE_PATH = 'best_coffee_disease2_model.h5'
 
-# --- 1. Data Loading and Augmentation ---
+
 def load_and_augment_data():
     """
     Sets up data pipelines with augmentation for training and a generator
@@ -26,11 +26,11 @@ def load_and_augment_data():
     """
     print("Loading data and setting up generators...")
 
-    # Data Augmentation for Training: Crucial for preventing overfitting
-    # Includes standard transformations for robustness
+    
+    
     train_datagen = ImageDataGenerator(
         preprocessing_function=preprocess_input,
-        validation_split=0.2, # Use 20% of data for validation
+        validation_split=0.2, 
         rotation_range=30,
         width_shift_range=0.2,
         height_shift_range=0.2,
@@ -40,16 +40,16 @@ def load_and_augment_data():
         fill_mode='nearest'
     )
 
-    # Validation generator (only preprocessing, no augmentation)
+    
     val_datagen = ImageDataGenerator(
         preprocessing_function=preprocess_input,
         validation_split=0.2
     )
 
     try:
-        # Training generator
-        # Note: flow_from_directory will try to ignore corrupt images during the flow 
-        # but the UnidentifiedImageError often happens during initial file indexing.
+        
+         
+        
         train_generator = train_datagen.flow_from_directory(
             DATA_DIR,
             target_size=IMG_SIZE,
@@ -59,7 +59,7 @@ def load_and_augment_data():
             shuffle=True
         )
 
-        # Validation generator
+        
         validation_generator = val_datagen.flow_from_directory(
             DATA_DIR,
             target_size=IMG_SIZE,
@@ -72,47 +72,47 @@ def load_and_augment_data():
         print(f"An error occurred during file indexing: {e}")
         print("This usually means there is a corrupt or non-image file in your dataset directory.")
         print("Please check all files in the directory for integrity.")
-        raise # Re-raise the exception to stop the process if the issue isn't resolved by the environment
+        raise 
 
     
     print(f"Detected {train_generator.num_classes} classes: {list(train_generator.class_indices.keys())}")
     
     return train_generator, validation_generator
 
-# --- 2. Model Definition ---
+
 def build_transfer_model(num_classes):
     """
     Builds the MobileNetV2 base model and adds a custom classification head.
     """
-    # Load MobileNetV2, pre-trained on ImageNet, without the top classification layer
-    # Ensured to use tf.keras.applications.mobilenet_v2.MobileNetV2
+    
+    
     base_model = MobileNetV2(
         weights='imagenet', 
         include_top=False, 
-        input_shape=IMG_SIZE + (3,) # Adds the 3 color channels
+        input_shape=IMG_SIZE + (3,) 
     )
 
-    # --- Add the custom classification head ---
+    
     x = base_model.output
     x = GlobalAveragePooling2D()(x)
-    x = Dropout(0.5)(x) # Add Dropout to further prevent overfitting
+    x = Dropout(0.5)(x) 
     x = Dense(256, activation='relu')(x)
-    x = Dropout(0.5)(x) # Second Dropout layer
-    predictions = Dense(num_classes, activation='softmax')(x) # Output layer
+    x = Dropout(0.5)(x) 
+    predictions = Dense(num_classes, activation='softmax')(x) 
 
-    # Final model combining base and new head
+    
     model = Model(inputs=base_model.input, outputs=predictions)
     
     return model, base_model
 
-# --- 3. Training Function ---
+
 def train_model():
     """
     Implements the two-stage training process (Feature Extraction and Fine-Tuning).
     """
     train_generator, validation_generator = load_and_augment_data()
     
-    # Check if the number of classes matches the generator output
+    
     global NUM_CLASSES
     if train_generator.num_classes != NUM_CLASSES:
         print(f"WARNING: NUM_CLASSES constant ({NUM_CLASSES}) does not match generator output ({train_generator.num_classes}). Adjusting to {train_generator.num_classes}.")
@@ -120,28 +120,28 @@ def train_model():
 
     model, base_model = build_transfer_model(NUM_CLASSES)
 
-    # --- Phase 1: Feature Extraction (Training only the top layers) ---
+    
     print("\n--- PHASE 1: FEATURE EXTRACTION (Training Top Layers) ---")
     
-    # Freeze the base model layers
+    
     for layer in base_model.layers:
         layer.trainable = False
 
-    # Compile the model with a moderate learning rate
-    base_learning_rate = 1e-3 # 0.001
+    
+    base_learning_rate = 1e-3 
     model.compile(
         optimizer=Adam(learning_rate=base_learning_rate),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
     
-    # Added a simple print to control output size for large summaries
+    
     print("Model summary (Feature Extraction): Structure defined.")
     
-    # Define Callbacks
+    
     callbacks = [
     EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
-    # Explicitly use the 'h5' format for maximum compatibility
+    
     ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_accuracy', save_best_only=True, mode='max', save_format='h5'), 
         ]
 
@@ -154,13 +154,13 @@ def train_model():
         callbacks=callbacks
     )
 
-    # --- Phase 2: Fine-Tuning (Unfreezing top layers of base model) ---
+    
     print("\n--- PHASE 2: FINE-TUNING (Unfreezing Top Layers of MobileNetV2) ---")
 
-    # Unfreeze the base model
+    
     base_model.trainable = True
 
-    # Freeze all layers up to a specific point (e.g., last 50 layers)
+    
     for layer in base_model.layers[:-FINE_TUNE_LAYERS]:
         layer.trainable = False
 

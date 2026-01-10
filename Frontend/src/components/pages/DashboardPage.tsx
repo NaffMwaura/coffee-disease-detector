@@ -9,9 +9,9 @@ import { IconMicroscope, IconLeaf } from '../ui/Icons';
    PLACEHOLDER DATA
 ======================================================================== */
 const FARMER_TESTIMONIALS = [
-    { name: "Aisha M.", rating: 5, quote: "The analysis is fast and the treatment recommendations saved my harvest! Truly a game-changer for my tea farm.", avatar: "AM" },
+    { name: "Aisha M.", rating: 5, quote: "The analysis is fast and the treatment recommendations saved my harvest! Truly a game-changer for my Coffee farm.", avatar: "AM" },
     { name: "John K.", rating: 4, quote: "Simple to use, even for an old farmer like me. The confidence score helps me trust the results.", avatar: "JK" },
-    { name: "Sita P.", rating: 5, quote: "I can check my tea leaves right in the field. Essential tool for modern agriculture.", avatar: "SP" },
+    { name: "Sita P.", rating: 5, quote: "I can check my Coffee leaves right in the field. Essential tool for modern agriculture.", avatar: "SP" },
 ];
 
 // --- PLACEHOLDER FOR YOUR ASSET ---
@@ -158,7 +158,7 @@ const DashboardHome: React.FC<DashboardHomeProps> = ({ userEmail, onStartScan })
                     Hello, <span className="text-amber-500">{userEmail.split('@')[0]}</span>!
                 </h1>
                 <p className="text-lg text-amber-300 mb-6">
-                    Ready to protect your harvest? Use Coffee Scan AI for instant, accurate disease diagnosis and treatment recommendations for your tea leaves.
+                    Ready to protect your harvest? Use Coffee Scan AI for instant, accurate disease diagnosis and treatment recommendations for your Coffee leaves.
                 </p>
                 
                 <button
@@ -317,7 +317,7 @@ const ScanPage: React.FC<ScanPageProps> = ({
 
                     <form onSubmit={handleUpload}>
                         <div className="mb-4">
-                            <label className="block text-sm font-medium mb-2">Select Tea Leaf Image (JPG/PNG)</label>
+                            <label className="block text-sm font-medium mb-2">Select Coffee Leaf Image (JPG/PNG)</label>
 
                             <label
                                 htmlFor="file-upload"
@@ -339,7 +339,7 @@ const ScanPage: React.FC<ScanPageProps> = ({
                                     className="hidden"
                                     accept="image/jpeg,image/png"
                                     onChange={handleFileChange}
-                                    aria-label="Select tea leaf image"
+                                    aria-label="Select Coffee leaf image"
                                 />
                             </label>
                         </div>

@@ -18,29 +18,29 @@ from psycopg2 import pool, sql
 from psycopg2.extras import DictCursor 
 from tensorflow.python.keras.models import load_model
 
-# --- Keras Legacy Fix (Keep for deployment stability) ---
-# The legacy fix is causing conflicts if the 'tf_keras' package is not installed (as per error log).
-# Relying on standard TensorFlow Keras imports now.
-# os.environ['TF_USE_LEGACY_KERAS'] = '1' 
 
 
-# --- Configuration ---
+
+
+
+
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# --- UPDATED CONFIG FOR COFFEE ---
-MODEL_PATH = "./best_coffee_disease2_model.h5" 
-IMG_HEIGHT = 224 # MobileNetV2 Standard Input
-IMG_WIDTH = 224 # MobileNetV2 Standard Input 
-CONFIDENCE_THRESHOLD = 0.70 
-NON_COFFEE_LEAF_CLASS_NAME = "Other_Non_Coffee_Leaf" # Renamed constant
 
-# FIX: Set to 7 to match the 7 classes output by the training script.
+MODEL_PATH = "./best_coffee_disease2_model.h5" 
+IMG_HEIGHT = 224 
+IMG_WIDTH = 224 
+CONFIDENCE_THRESHOLD = 0.70 
+NON_COFFEE_LEAF_CLASS_NAME = "Other_Non_Coffee_Leaf" 
+
+
 NUM_CLASSES = 7 
 
 CLASS_NAMES = [
     'Cerscospora', 'Other_Non_Coffee_Leaf', 'coffee___healthy', 'coffee___red_spider_mite', 'coffee___rust', 'miner', 'phoma'
 ]
-# --- RECOMMENDATIONS MAP (Updated to match exact CLASS_NAMES keys) ---
+
 RECOMMENDATIONS = {
     # FIX: Keys must match the exact class names (e.g., 'coffee___rust' not 'Coffee Leaf Rust')
     'coffee___rust': "Coffee Leaf Rust (La Roya) detected. Use resistant varieties, apply systemic fungicides, and ensure proper shade management. Action: **Fungicide and Shade Management**",
